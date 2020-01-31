@@ -9,7 +9,7 @@
     "sort-by": "^1.2.0"
   },
   "devDependencies": {
-    "react-scripts": "3.0.0"
+    "react-scripts": "3.3.1"
   },
   "scripts": {
     "start": "react-scripts start",
