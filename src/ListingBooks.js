@@ -15,13 +15,6 @@ class ListingBooks extends Component {
 
     return (
       <div>
-        <div className="fixed-header-top">
-          <div className="fixed-header">
-            <div className="list-books-title">
-              <h1>MyReads</h1>
-            </div>
-          </div>
-        </div>
         <div className="list-books-content">
           <div>
             <div className="bookshelf">
