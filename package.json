@@ -1,6 +1,11 @@
 {
+  "name": "myreads",
+  "version": "1.0.0",
+  "description": "A bookshelf app: search the Udacity Books API and move books between Currently Reading, Want to Read and Read",
+  "private": true,
+  "license": "MIT",
+  "author": "alpersonalwebsite",
   "dependencies": {
-    "form-serialize": "^0.7.2",
     "prop-types": "^15.6.2",
     "react": "^16.7.0",
     "react-dom": "^16.7.0",
@@ -11,10 +16,13 @@
   "devDependencies": {
     "react-scripts": "3.0.0"
   },
+  "resolutions": {
+    "babel-jest": "24.7.1"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test --env=jsdom",
+    "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
   "browserslist": [

@@ -1,8 +1,6 @@
 import React, { Component } from 'react'
 import { Link } from 'react-router-dom'
 import ReactStars from 'react-stars'
-//import escapeRegExp from 'escape-string-regexp'
-//import sortBy from 'sort-by'
 import PropTypes from 'prop-types'
 import * as BooksAPI from './BooksAPI'
 import noBookImage from './images/noimage.png'
@@ -10,73 +8,109 @@ import noBookImage from './images/noimage.png'
 class SearchingBooks extends Component {
 
   static propTypes = {
+    passingBooksOnState: PropTypes.array.isRequired,
+    onSelectChange: PropTypes.func.isRequired,
     onShowDescription: PropTypes.func
   }
 
+  // The shelves are read from props where they are used. They used to be copied into
+  // state in componentDidMount and re-copied in componentWillReceiveProps, which is
+  // both the derived-state antipattern and a deprecated lifecycle: React renamed it
+  // UNSAFE_componentWillReceiveProps in 16.9, and this project's ^16.7 range installs
+  // 16.14, so every prop change logged a warning.
   state = {
     search: '',
     books: [],
-    booksShelf: []
+    error: null,
+    searching: false
   }
 
-  componentDidMount() {
-    this.setState({
-      booksShelf: this.props.passingBooksOnState
-    });
+  // Guards against an out-of-order response. Type quickly and several searches are in
+  // flight at once; without this, a slower earlier request can land last and overwrite
+  // the results for the query the user is actually looking at.
+  latestQuery = ''
+
+  componentWillUnmount() {
+    // Nothing may call setState after this point.
+    this.latestQuery = null
   }
 
-  componentWillReceiveProps(nextProps) {
-    this.setState({
-      booksShelf: nextProps.passingBooksOnState
-    });
-  }
+  resultBooks = (search) => {
+    const query = search.trim()
 
-  resultBooks = (search, caret) => {
-
-    if (search) {
-      BooksAPI.search(search).then((books) => {
-
-        if (!books.error && caret > 1) {
-
-          let res  = books.map(o => {
-            const {shelf} = this.state.booksShelf.find(({id}) => id === o.id) || {shelf: 'none'};
-            return Object.assign({}, o, {shelf});
-          });
-
-          books = res
-
-          this.setState({books});
-
-        } else {
-          this.setState({books: []});
-        }
-      })
-
-    } else {
-      this.setState({books: []});
+    // Two characters, measured on the query itself. This used to be `caret > 1`, where
+    // caret was event.target.selectionStart: the caret happens to sit past position 1
+    // while you type forwards, so it stood in for "long enough", but it is not the same
+    // thing. Pasting a query, or editing near the start of one, put the caret at 0 or 1
+    // and silently returned no results for a perfectly good search.
+    if (query.length < 2) {
+      this.latestQuery = query
+      this.setState({ books: [], error: null, searching: false })
+      return
     }
+
+    this.latestQuery = query
+    this.setState({ searching: true, error: null })
+
+    BooksAPI.search(query)
+      .then((books) => {
+        if (this.latestQuery !== query) {
+          return
+        }
+
+        const shelves = this.props.passingBooksOnState
+
+        this.setState({
+          books: books.map((book) => {
+            const { shelf } = shelves.find(({ id }) => id === book.id) || { shelf: 'none' }
+            return Object.assign({}, book, { shelf })
+          }),
+          searching: false
+        })
+      })
+      .catch((error) => {
+        // There was no .catch at all, so a dead network or an error response from the
+        // API left an unhandled rejection in the console and the previous results on
+        // screen, which reads as "your search matched the same books again".
+        if (this.latestQuery !== query) {
+          return
+        }
+
+        this.setState({ books: [], error: error.message, searching: false })
+      })
   }
 
   updateBookStateShelf = (selShelf, selBook) => {
-    this.setState({books: this.state.books.map(
-      (book)=> book.id === selBook.id ? Object.assign({}, book, {shelf: selShelf}) : book
-    )})
+    this.setState((state) => ({
+      books: state.books.map(
+        (book) => book.id === selBook.id ? Object.assign({}, book, { shelf: selShelf }) : book
+      )
+    }))
   }
 
-  onChangeHandle(selShelf, selBook, selPage) {
+  onChangeHandle (selShelf, selBook, selPage) {
+    const previousShelf = (this.state.books.find(({ id }) => id === selBook.id) || {}).shelf
+
     this.updateBookStateShelf(selShelf, selBook)
-    this.props.onSelectChange(selShelf, selBook, selPage)
 
+    // The search page keeps its own copy of the results, so the parent rolling back its
+    // list did nothing here: a move the server rejected stayed on screen until the next
+    // search. changeShelf rethrows now, so this copy can be put back too.
+    Promise.resolve(this.props.onSelectChange(selShelf, selBook, selPage))
+      .catch(() => {
+        if (this.latestQuery === null) return
+        this.updateBookStateShelf(previousShelf, selBook)
+      })
   }
 
-  updateSearchState = (search, caret) => {
+  updateSearchState = (search) => {
     this.setState({ search })
-    this.resultBooks(search,caret)
+    this.resultBooks(search)
   }
 
   render() {
     const { onShowDescription } = this.props
-    const { search, books } = this.state
+    const { search, books, error, searching } = this.state
 
     return (
       <div>
@@ -91,13 +125,21 @@ class SearchingBooks extends Component {
                 <div className="search-books-input-wrapper">
                   <input
                     type="text" placeholder="Search by title or author"
-                    onChange={(event) => this.updateSearchState(event.target.value,event.target.selectionStart)}
+                    onChange={(event) => this.updateSearchState(event.target.value)}
                     value={search}
                   />
                 </div>
               </div>
               <div className="search-books-results">
-                <ol className="books-grid"></ol>
+                {searching && <div>Searching...</div>}
+                {error && (
+                  <div role="alert" style={{ color: '#b00' }}>
+                    Could not search: {error}
+                  </div>
+                )}
+                {!searching && !error && search.trim().length >= 2 && books.length === 0 && (
+                  <div>No books matched "{search.trim()}".</div>
+                )}
               </div>
             </div>
           </div>
@@ -134,7 +176,7 @@ class SearchingBooks extends Component {
                         <div>
                           <div>{book.publishedDate ? book.publishedDate : ''} {book.pageCount ? ' - ' + book.pageCount : ''} pages</div>
                           {book.hasOwnProperty('averageRating') &&
-                            <div onClick={() => alert('You are not updating states and/or rating. Just seeing the rate. Kudos to react-stars.')}>
+                            <div title="Ratings come from the API and are read-only here">
                               <ReactStars
                                 count={5}
                                 value={book.averageRating}
@@ -143,7 +185,11 @@ class SearchingBooks extends Component {
                               />
                             </div>
                           }
-                          <div><i className="fa fa-user-circle" aria-hidden="true"></i>
+                          <div>
+                            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"
+                              focusable="false" style={{ verticalAlign: 'middle' }}>
+                              <path fill="currentColor" d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4 0-8 2-8 5v3h16v-3c0-3-4-5-8-5z" />
+                            </svg>
                             {book.ratingsCount ? ' ' + book.ratingsCount : ' '}
                             {book.ratingsCount === 1 ? ' review'
                             : book.ratingsCount > 1 ? ' reviews'

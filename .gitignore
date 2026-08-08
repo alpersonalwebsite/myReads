@@ -41,3 +41,21 @@ typings/
 *stats.*
 
 *-old*
+
+# Environment files beyond the .env.*.local set above. Create React App inlines
+# REACT_APP_* variables into the bundle at build time, so anything here ships to the
+# browser in plain sight.
+.env.*
+
+# Keys and credentials
+*.pem
+*.key
+credentials*
+secrets/
+
+# Local databases
+*.sqlite
+*.db
+
+# Python, for the odd helper script
+__pycache__/
