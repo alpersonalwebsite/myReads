@@ -48,14 +48,24 @@ class BooksApp extends Component {
   }
 
   changeShelf = (selectedShelf, selectObject, page) => {
-    const previous = this.state.books
+    // The shelf this one book had, not a snapshot of the whole list. Rolling back the
+    // entire books array would undo any other move that settled in between: two shelf
+    // changes can easily be in flight at once, and the loser of that race would silently
+    // revert the winner.
+    const bookId = selectObject.id
+    const previousShelf = (this.state.books.find((book) => book.id === bookId) || {}).shelf
 
-    // Optimistic: move the book immediately so the select feels instant.
-    this.setState({books: this.state.books.map(
-      (book)=> book.id === selectObject.id ? Object.assign({}, book, {shelf: selectedShelf}) : book
-    )})
+    const setShelf = (shelf) => (state) => ({
+      books: state.books.map((book) =>
+        book.id === bookId ? Object.assign({}, book, { shelf }) : book
+      )
+    })
 
-    BooksAPI.update(selectObject, selectedShelf)
+    // Optimistic, and in the functional form so it composes from whatever state is
+    // current rather than whatever it was when the click happened.
+    this.setState(setShelf(selectedShelf))
+
+    return BooksAPI.update(selectObject, selectedShelf)
       .then(() => {
         if (!this.mounted) return
         if (page === 'searchPage') {
@@ -63,10 +73,12 @@ class BooksApp extends Component {
         }
       })
       .catch((error) => {
-        if (!this.mounted) return
-        // ...and roll back if the server disagreed. Without this the UI claimed a
-        // move that never happened, and the next reload silently undid it.
-        this.setState({ books: previous, error: `Could not move that book: ${error.message}` })
+        if (!this.mounted) throw error
+        // Roll back this book only. Without any rollback the UI claimed a move that
+        // never happened and the next reload silently undid it.
+        this.setState(setShelf(previousShelf))
+        this.setState({ error: `Could not move that book: ${error.message}` })
+        throw error
       })
   }
 

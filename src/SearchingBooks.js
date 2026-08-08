@@ -81,15 +81,26 @@ class SearchingBooks extends Component {
   }
 
   updateBookStateShelf = (selShelf, selBook) => {
-    this.setState({books: this.state.books.map(
-      (book)=> book.id === selBook.id ? Object.assign({}, book, {shelf: selShelf}) : book
-    )})
+    this.setState((state) => ({
+      books: state.books.map(
+        (book) => book.id === selBook.id ? Object.assign({}, book, { shelf: selShelf }) : book
+      )
+    }))
   }
 
-  onChangeHandle(selShelf, selBook, selPage) {
-    this.updateBookStateShelf(selShelf, selBook)
-    this.props.onSelectChange(selShelf, selBook, selPage)
+  onChangeHandle (selShelf, selBook, selPage) {
+    const previousShelf = (this.state.books.find(({ id }) => id === selBook.id) || {}).shelf
 
+    this.updateBookStateShelf(selShelf, selBook)
+
+    // The search page keeps its own copy of the results, so the parent rolling back its
+    // list did nothing here: a move the server rejected stayed on screen until the next
+    // search. changeShelf rethrows now, so this copy can be put back too.
+    Promise.resolve(this.props.onSelectChange(selShelf, selBook, selPage))
+      .catch(() => {
+        if (this.latestQuery === null) return
+        this.updateBookStateShelf(previousShelf, selBook)
+      })
   }
 
   updateSearchState = (search) => {
