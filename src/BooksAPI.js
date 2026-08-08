@@ -43,7 +43,18 @@ const booksOrThrow = (data) => {
     throw new Error(data.error)
   }
 
-  return (data && data.books) || []
+  // Absent is fine and means "no results". Present but not an array is not: callers
+  // .sort() and .map() the return value, so handing back an object or a string moves
+  // the failure into a component, several frames from the thing that caused it.
+  if (!data || data.books === undefined || data.books === null) {
+    return []
+  }
+
+  if (!Array.isArray(data.books)) {
+    throw new TypeError(`Expected books to be an array, received ${typeof data.books}`)
+  }
+
+  return data.books
 }
 
 export const get = (bookId) =>
