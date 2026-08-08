@@ -1,95 +1,146 @@
-# MyReads Project
+# MyReads
 
-[![Greenkeeper badge](https://badges.greenkeeper.io/alpersonalwebsite/myReads.svg)](https://greenkeeper.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
 
-This is the starter template for the final assessment project for Udacity's React Fundamentals course. The goal of this template is to save you time by providing a static example of the CSS and HTML markup that may be used, but without any of the React code that is needed to complete the project. If you choose to start with this template, your job will be to add interactivity to the app by refactoring the static code in this template.
+A bookshelf: search a catalogue of books and move them between **Currently Reading**,
+**Want to Read** and **Read**. Built with Create React App 3 and React 16, against
+Udacity's books backend.
 
-Of course, you are free to start this project from scratch if you wish! Just be sure to use [Create React App](https://github.com/facebookincubator/create-react-app) to bootstrap the project.
+The README used to be Udacity's starter-template one, unedited. It told you the React
+code was missing and that your job was to add it, described a file tree that no longer
+matched, and linked to a `CONTRIBUTING.md` that is not in this repository. The app has
+been finished for years.
 
-## TL;DR
+## The app
 
-To get started developing right away:
+| File | Role |
+| --- | --- |
+| `src/App.js` | routes, holds the books, owns the shelf changes |
+| `src/ListingBooks.js` | one shelf and its grid of books |
+| `src/SearchingBooks.js` | the search page |
+| `src/ModalWindow.js` | the book detail overlay |
+| `src/BooksAPI.js` | the four calls to the backend |
 
-* install all project dependencies with `npm install`
-* start the development server with `npm start`
+## Running it
 
-## What You're Getting
-```bash
-├── CONTRIBUTING.md
-├── README.md - This file.
-├── SEARCH_TERMS.md # The whitelisted short collection of available search terms for you to use with your app.
-├── package.json # npm package manager file. It's unlikely that you'll need to modify this.
-├── public
-│   ├── favicon.ico # React Icon, You may change if you wish.
-│   └── index.html # DO NOT MODIFY
-└── src
-    ├── App.css # Styles for your app. Feel free to customize this as you desire.
-    ├── App.js # This is the root of your app. Contains static HTML right now.
-    ├── App.test.js # Used for testing. Provided with Create React App. Testing is encouraged, but not required.
-    ├── BooksAPI.js # A JavaScript API for the provided Udacity backend. Instructions for the methods are below.
-    ├── icons # Helpful images for your app. Use at your discretion.
-    │   ├── add.svg
-    │   ├── arrow-back.svg
-    │   └── arrow-drop-down.svg
-    ├── index.css # Global styles. You probably won't need to change anything here.
-    └── index.js # You should not need to modify this file. It is used for DOM rendering only.
+```shell
+yarn install --frozen-lockfile
+yarn start
+yarn test
+yarn build
 ```
 
-Remember that good React design practice is to create new JS files for each component and use import/require statements to include them where they are needed.
+`--frozen-lockfile` rather than a bare `yarn install`, so you get exactly what
+`yarn.lock` pins and the install fails instead of quietly resolving something newer.
 
-## Backend Server
+**Node 10 or 12.** This is `react-scripts` 3, which is webpack 4, and on Node 17 or
+newer the build dies with `ERR_OSSL_EVP_UNSUPPORTED` because webpack 4 uses an MD4 hash
+that OpenSSL 3 removed. The dependencies here are deliberately left at their 2019
+versions, so either use an older Node or pass
+`NODE_OPTIONS=--openssl-legacy-provider`.
 
-To simplify your development process, we've provided a backend server for you to develop against. The provided file [`BooksAPI.js`](src/BooksAPI.js) contains the methods you will need to perform necessary operations on the backend:
+### The install used to fail before it built anything
 
-* [`getAll`](#getall)
-* [`update`](#update)
-* [`search`](#search)
+A clean install could not build or test, on any machine, and had not been able to since
+the lockfile was committed:
 
-### `getAll`
-
-Method Signature:
-
-```js
-getAll()
+```text
+The react-scripts package provided by Create React App requires a dependency:
+  "babel-jest": "24.7.1"
+However, a different version of babel-jest was detected higher up in the tree:
+  /app/node_modules/babel-jest (version: 24.8.0)
 ```
 
-* Returns a Promise which resolves to a JSON object containing a collection of book objects.
-* This collection represents the books currently in the bookshelves in your app.
+`react-scripts@3.0.0` pins `babel-jest` at exactly **24.7.1**, while the `jest-config`
+it pulls in asks for `^24.8.0`. Yarn hoists 24.8.0 to the top of `node_modules`, Create
+React App's preflight check sees a version it did not expect, and refuses to run.
 
-### `update`
+The fix is a `resolutions` entry pinning `babel-jest` to the 24.7.1 that
+`react-scripts` asks for. Create React App's own suggestion is
+`SKIP_PREFLIGHT_CHECK=true`, which does not fix the mismatch, it stops you being told
+about it. Nothing was upgraded: the resolution moves a transitive dependency **to** the
+version the pinned `react-scripts` declares.
 
-Method Signature:
+## The backend
 
-```js
-update(book, shelf)
+`https://reactnd-books-api.udacity.com`, and it is still up. `BooksAPI.js` sends an
+`Authorization` header holding a random string kept in `localStorage`. That is not a
+credential: it namespaces your shelves on a server everyone shares, and any unique
+string works.
+
+Search only matches a fixed set of cached terms, listed in
+[SEARCH_TERMS.md](SEARCH_TERMS.md). A search for anything else legitimately returns
+nothing, which is the backend, not the app.
+
+## What was wrong
+
+**Searching could crash the page.** The API answers either `{ "books": [...] }` or
+`{ "error": "..." }`, and `BooksAPI.search` reached straight for `data.books`, so an
+error response produced `undefined`. The caller then did `if (!books.error ...)`, a
+check written against the raw response shape that the API module had already unwrapped.
+So the guard could never work, and on the exact case it existed for it threw:
+
+```text
+TypeError: Cannot read properties of undefined (reading 'error')
 ```
 
-* book: `<Object>` containing at minimum an `id` attribute
-* shelf: `<String>` contains one of ["wantToRead", "currentlyReading", "read"]  
-* Returns a Promise which resolves to a JSON object containing the response data of the POST request
+Still reproducible against the live API today: an empty query returns
+`{"error":"Please provide a query in the request body"}`. `BooksAPI` now checks
+`response.ok`, turns an `error` payload into a thrown `Error`, and the search page
+catches it and says so.
 
-### `search`
+**The search box was gated on the cursor position.** The condition was `caret > 1`,
+where `caret` was `event.target.selectionStart`. While you type forwards the caret does
+sit past position 1, so it stood in for "the query is long enough", but they are not the
+same thing: paste a query, or edit near the start of one, and the caret is 0 or 1 and a
+perfectly good search silently returned nothing. It is `query.trim().length < 2` now.
 
-Method Signature:
+**Fast typing could show the wrong results.** Several searches were in flight at once
+with nothing to order them, so a slower earlier request could land last and overwrite
+the results for the query you were actually looking at. The latest query is tracked and
+stale responses are dropped.
 
-```js
-search(query)
+**Render mutated state.** `books.sort(sortBy('title'))` sorts **in place** and returns
+the same array, so rendering reordered `this.state.books` directly. Measured on a
+three-book state: same array object before and after, different order. It copies first
+now.
+
+**Nothing was caught.** There was not one `.catch` in `src`. A dead network left an
+unhandled rejection in the console and an empty shelf on screen, which looks exactly
+like a library with no books in it. Moving a book was fire-and-forget too, so a failed
+update showed a move that never happened and the next reload silently undid it; that one
+rolls back now.
+
+**Three `<h1>` elements on the home page.** The header markup lived inside
+`ListingBooks`, which the home route renders three times, once per shelf. Nothing looked
+wrong, because `.fixed-header` is `position: fixed` at `top: 0` so all three landed on
+top of each other, but the document announced three top-level headings. The header is
+rendered once now, by `App`.
+
+**A deprecated lifecycle.** `componentWillReceiveProps` copied a prop into state, which
+is both the derived-state antipattern and a method React renamed to
+`UNSAFE_componentWillReceiveProps` in 16.9. The `^16.7` range here installs 16.14, so it
+warned on every prop change. The component reads the prop directly.
+
+**1.4 MB of vendored icons for two glyphs.** `src/resources/font-awesome-4.7.0/` held 37
+committed files, including `.otf`, `.eot`, `.ttf`, `.woff` and `.woff2` fonts plus the
+complete `less/` and `scss/` sources, and the app used exactly two icons from it: a
+close × and a reviewer silhouette. Both are inline SVG now and the directory is gone.
+
+**The test had never passed.** It rendered `<App />` bare, and `App` is built from
+`<Route>` elements:
+
+```text
+Invariant failed: You should not use <Route> outside a <Router>
 ```
 
-* query: `<String>`
-* Returns a Promise which resolves to a JSON object containing a collection of a maximum of 20 book objects.
-* These books do not know which shelf they are on. They are raw results only. You'll need to make sure that books have the correct state while on the search page.
+It wraps in `MemoryRouter` and mocks `BooksAPI` now, and there is a second test
+asserting the three shelves render. Fixing it immediately surfaced a real leak, a
+`setState` after unmount when the initial fetch resolved late, which is guarded.
 
-## Important
-The backend API uses a fixed set of cached search results and is limited to a particular set of search terms, which can be found in [SEARCH_TERMS.md](SEARCH_TERMS.md). That list of terms are the _only_ terms that will work with the backend, so don't be surprised if your searches for Basket Weaving or Bubble Wrap don't come back with any results.
+## Not covered
 
-## Create React App
-
-This project was bootstrapped with [Create React App](https://github.com/facebookincubator/create-react-app). You can find more information on how to perform common tasks [here](https://github.com/facebookincubator/create-react-app/blob/master/packages/react-scripts/template/README.md).
-
-## Contributing
-
-This repository is the starter code for _all_ Udacity students. Therefore, we most likely will not accept pull requests.
-
-For details, check out [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Accessibility beyond the basics.** The close control is keyboard reachable now, but
+  the modal does not trap focus or close on Escape, and the shelf `<select>` elements
+  have no labels.
+- **Pagination.** Search returns at most 20 results and the app shows what it gets.
