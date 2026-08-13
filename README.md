@@ -33,11 +33,19 @@ yarn build
 `--frozen-lockfile` rather than a bare `yarn install`, so you get exactly what
 `yarn.lock` pins and the install fails instead of quietly resolving something newer.
 
-**Node 10 or 12.** This is `react-scripts` 3, which is webpack 4, and on Node 17 or
-newer the build dies with `ERR_OSSL_EVP_UNSUPPORTED` because webpack 4 uses an MD4 hash
-that OpenSSL 3 removed. The dependencies here are deliberately left at their 2019
-versions, so either use an older Node or pass
-`NODE_OPTIONS=--openssl-legacy-provider`.
+**On a current Node, set one environment variable.** This is `react-scripts` 3, which is
+webpack 4, and webpack 4 uses an MD4 hash that OpenSSL 3 removed, so from Node 17 onwards a
+bare build fails with `ERR_OSSL_EVP_UNSUPPORTED`. That is a build-tool problem, not a
+reason to run an end-of-life runtime:
+
+```shell
+NODE_OPTIONS=--openssl-legacy-provider yarn build
+```
+
+Tested in this repository: `Compiled successfully` on **Node 20** and **Node 22** with that
+flag, and `ERR_OSSL_EVP_UNSUPPORTED` on Node 22 without it. Node 10 also works with no flag
+and is what the 2019 project targeted, but there is no need to install an unsupported
+runtime to build this.
 
 ### The install used to fail before it built anything
 
